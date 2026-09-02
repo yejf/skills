@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>收藏</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            padding: 3rem 2rem;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 2.5rem;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            font-size: 0.85rem;
+            color: #999;
+            margin-top: 0.25rem;
+        }
+
+        .header code {
+            font-family: "SF Mono", "Fira Code", monospace;
+            font-size: 0.8rem;
+            background: #f0f0f0;
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 3rem;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .stat-item .value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .stat-item .label {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 0.35rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .filters input,
+        .filters select {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            background: #fff;
+            color: #1a1a1a;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .filters input:focus,
+        .filters select:focus {
+            border-color: #1a1a1a;
+        }
+
+        .filters input[type="text"] {
+            width: 280px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+        }
+
+        thead th {
+            text-align: left;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #999;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e5e5e5;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        thead th:hover {
+            color: #1a1a1a;
+        }
+
+        thead th .arrow {
+            font-size: 0.6rem;
+            margin-left: 0.25rem;
+            opacity: 0.4;
+        }
+
+        tbody td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 0.85rem;
+            vertical-align: middle;
+        }
+
+        tbody tr:hover {
+            background: #fafafa;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .col-id { color: #999; font-size: 0.8rem; width: 50px; }
+        .col-date { color: #666; font-size: 0.8rem; white-space: nowrap; width: 100px; }
+        .col-title { max-width: 320px; }
+        .col-title a { color: #1a1a1a; text-decoration: none; font-weight: 500; }
+        .col-title a:hover { text-decoration: underline; }
+        .col-author { color: #666; font-size: 0.8rem; white-space: nowrap; }
+        .col-source { color: #666; font-size: 0.8rem; white-space: nowrap; }
+        .col-category { white-space: nowrap; }
+
+        .col-category span {
+            font-size: 0.75rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+
+        .cat-tutorial { background: #e8f4fd; color: #0c5da5; }
+        .cat-opinion { background: #fde8e8; color: #a50c0c; }
+        .cat-news { background: #e8fde8; color: #0ca50c; }
+        .cat-tech-article { background: #fdf0e8; color: #a55c0c; }
+        .cat-research { background: #f0e8fd; color: #5c0ca5; }
+        .cat-general { background: #f0f0f0; color: #666; }
+
+        .col-words {
+            text-align: right;
+            color: #999;
+            font-size: 0.8rem;
+            font-variant-numeric: tabular-nums;
+            width: 80px;
+        }
+
+        .col-links { width: 120px; white-space: nowrap; }
+
+        .col-links a {
+            font-size: 0.75rem;
+            color: #999;
+            text-decoration: none;
+            margin-right: 0.75rem;
+        }
+
+        .col-links a:hover { color: #1a1a1a; }
+
+        .empty {
+            text-align: center;
+            padding: 4rem 1rem;
+            color: #ccc;
+            font-size: 0.9rem;
+        }
+
+        .footer {
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e5e5e5;
+            font-size: 0.75rem;
+            color: #ccc;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 1.5rem 1rem; }
+            .stats { gap: 1.5rem; flex-wrap: wrap; }
+            .stat-item .value { font-size: 1.25rem; }
+            .filters { flex-direction: column; }
+            .filters input[type="text"] { width: 100%; }
+            .col-author, .col-source { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>收藏</h1>
+            <p>通过 <code>/clip</code> 自动维护</p>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="value" id="totalArticles">0</div>
+                <div class="label">文章</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="totalWords">0</div>
+                <div class="label">字数</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="totalCategories">0</div>
+                <div class="label">分类</div>
+            </div>
+        </div>
+
+        <div class="filters">
+            <input type="text" id="searchInput" placeholder="搜索标题、作者、来源...">
+            <select id="categoryFilter">
+                <option value="">全部分类</option>
+            </select>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th onclick="sortTable('id')">序号<span class="arrow">&udarr;</span></th>
+                    <th onclick="sortTable('date')">日期<span class="arrow">&udarr;</span></th>
+                    <th onclick="sortTable('title')">标题<span class="arrow">&udarr;</span></th>
+                    <th onclick="sortTable('author')">作者<span class="arrow">&udarr;</span></th>
+                    <th onclick="sortTable('source')">来源<span class="arrow">&udarr;</span></th>
+                    <th onclick="sortTable('category')">分类<span class="arrow">&udarr;</span></th>
+                    <th onclick="sortTable('word_count')">字数<span class="arrow">&udarr;</span></th>
+                    <th>链接</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+
+        <div class="footer">
+            <span>数据源: collect.csv</span>
+            <span id="lastUpdate">-</span>
+        </div>
+    </div>
+
+    <script>
+        var articles = [];
+        var currentSort = { field: 'id', direction: 'desc' };
+
+        function parseCSV(text) {
+            var lines = text.trim().split('\n');
+            var headers = lines[0].split(',');
+            return lines.slice(1).map(function(line) {
+                var values = line.split(',');
+                var obj = {};
+                headers.forEach(function(h, i) { obj[h.trim()] = values[i] ? values[i].trim() : ''; });
+                return obj;
+            });
+        }
+
+        function getCatClass(cat) {
+            if (cat.indexOf('tutorial') >= 0) return 'cat-tutorial';
+            if (cat.indexOf('opinion') >= 0) return 'cat-opinion';
+            if (cat.indexOf('news') >= 0) return 'cat-news';
+            if (cat.indexOf('tech') >= 0) return 'cat-tech-article';
+            if (cat.indexOf('research') >= 0) return 'cat-research';
+            return 'cat-general';
+        }
+
+        function renderStats() {
+            var total = articles.length;
+            var words = 0;
+            var cats = {};
+            articles.forEach(function(a) {
+                words += parseInt(a.word_count || 0);
+                var c = a.category.split('【')[0];
+                cats[c] = true;
+            });
+
+            document.getElementById('totalArticles').textContent = total;
+            document.getElementById('totalWords').textContent = words.toLocaleString();
+            document.getElementById('totalCategories').textContent = Object.keys(cats).length;
+        }
+
+        function renderCategoryFilter() {
+            var seen = {};
+            var list = [];
+            articles.forEach(function(a) {
+                if (!seen[a.category]) { seen[a.category] = true; list.push(a.category); }
+            });
+            var sel = document.getElementById('categoryFilter');
+            sel.innerHTML = '<option value="">全部分类</option>';
+            list.forEach(function(c) {
+                sel.innerHTML += '<option value="' + c + '">' + c + '</option>';
+            });
+        }
+
+        function renderTable(data) {
+            var tbody = document.getElementById('tableBody');
+            if (!data.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.map(function(a) {
+                return '<tr>' +
+                    '<td class="col-id">' + a.id + '</td>' +
+                    '<td class="col-date">' + a.date + '</td>' +
+                    '<td class="col-title"><a href="' + a.url + '" target="_blank">' + a.title + '</a></td>' +
+                    '<td class="col-author">' + a.author + '</td>' +
+                    '<td class="col-source">' + a.source + '</td>' +
+                    '<td class="col-category"><span class="' + getCatClass(a.category) + '">' + a.category + '</span></td>' +
+                    '<td class="col-words">' + parseInt(a.word_count).toLocaleString() + '</td>' +
+                    '<td class="col-links"><a href="' + a.url + '" target="_blank">原文</a><a href="' + a.file + '" target="_blank">笔记</a></td>' +
+                '</tr>';
+            }).join('');
+        }
+
+        function sortTable(field) {
+            if (currentSort.field === field) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.direction = 'asc';
+            }
+            articles.sort(function(a, b) {
+                var va = a[field], vb = b[field];
+                if (field === 'id' || field === 'word_count') { va = parseInt(va); vb = parseInt(vb); }
+                return currentSort.direction === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+            });
+            renderTable(articles);
+        }
+
+        function filterData() {
+            var q = document.getElementById('searchInput').value.toLowerCase();
+            var cat = document.getElementById('categoryFilter').value;
+            var filtered = articles.filter(function(a) {
+                var matchQ = !q || a.title.toLowerCase().indexOf(q) >= 0 || a.author.toLowerCase().indexOf(q) >= 0 || a.source.toLowerCase().indexOf(q) >= 0;
+                var matchC = !cat || a.category === cat;
+                return matchQ && matchC;
+            });
+            renderTable(filtered);
+        }
+
+        function loadData() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', 'collect.csv', true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200 || xhr.status === 0) {
+                        var text = xhr.responseText;
+                        if (text.trim()) {
+                            articles = parseCSV(text);
+                            renderStats();
+                            renderCategoryFilter();
+                            renderTable(articles);
+                        }
+                        var now = new Date();
+                        document.getElementById('lastUpdate').textContent = '更新于 ' + now.toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
+                    } else {
+                        document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="empty">加载失败，请确保 collect.csv 存在</td></tr>';
+                    }
+                }
+            };
+            xhr.onerror = function() {
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="empty">请通过 HTTP 服务打开（如 VS Code Live Server）</td></tr>';
+            };
+            xhr.send();
+        }
+
+        document.getElementById('searchInput').addEventListener('input', filterData);
+        document.getElementById('categoryFilter').addEventListener('change', filterData);
+        loadData();
+    </script>
+</body>
+</html>
