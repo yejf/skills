@@ -251,24 +251,75 @@
         </table>
 
         <div class="footer">
-            <span>数据源: collect.csv</span>
+            <span>数据源: 资料库数据表（/clip 增量同步）</span>
             <span id="lastUpdate">-</span>
         </div>
     </div>
 
     <script>
+        // 数据表 ID：首次资料库同步时由 AI 替换为真实值（来自 import_csv 返回的节点 id）
+        var DATABASE_ID = '__CLIP_DATABASE_ID__';
+
+        // 字段映射：key 为页面内部字段名，value 为数据表真实字段名。
+        // 首次同步时由 AI 按服务端真实 schema 填充（通常与 CSV 表头一致）。
+        var FIELD_MAP = __CLIP_FIELD_MAP__;
+
         var articles = [];
         var currentSort = { field: 'id', direction: 'desc' };
+        var refreshTimer = null;
 
-        function parseCSV(text) {
-            var lines = text.trim().split('\n');
-            var headers = lines[0].split(',');
-            return lines.slice(1).map(function(line) {
-                var values = line.split(',');
-                var obj = {};
-                headers.forEach(function(h, i) { obj[h.trim()] = values[i] ? values[i].trim() : ''; });
-                return obj;
-            });
+        function getDb() {
+            try {
+                if (window.__SMART_PAGE__ && window.__SMART_PAGE__.database) {
+                    return window.__SMART_PAGE__.database;
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        // 兼容 text（string）与 url（{text, link}）两种返回形态
+        function toText(v) {
+            if (v && typeof v === 'object') return String(v.link || v.text || '');
+            return String(v === null || v === undefined ? '' : v);
+        }
+
+        function toInt(v) {
+            var n = parseInt(v, 10);
+            return isNaN(n) ? 0 : n;
+        }
+
+        function mapRow(row) {
+            return {
+                id: toInt(raw(row, 'id')),
+                date: toText(raw(row, 'date')).slice(0, 10),
+                title: toText(raw(row, 'title')),
+                author: toText(raw(row, 'author')),
+                source: toText(raw(row, 'source')),
+                category: toText(raw(row, 'category')),
+                word_count: toInt(raw(row, 'word_count')),
+                url: toText(raw(row, 'url'))
+            };
+        }
+
+        function raw(row, key) {
+            var v = row[FIELD_MAP[key]];
+            return v === null || v === undefined ? '' : v;
+        }
+
+        // query 单次只回一页（上限 200），拉全量必须循环翻页（游标入参固定为 startCursor）
+        function loadAll(db, startCursor, acc, guard) {
+            acc = acc || [];
+            guard = guard || 0;
+            if (guard > 100) return Promise.resolve(acc);
+            return db.query({ databaseId: DATABASE_ID, pageSize: 200, startCursor: startCursor })
+                .then(function (r) {
+                    acc = acc.concat(r.results || []);
+                    var next = r.nextCursor;
+                    if (r.hasMore && next && next !== startCursor && (r.results || []).length) {
+                        return loadAll(db, next, acc, guard + 1);
+                    }
+                    return acc;
+                });
         }
 
         function getCatClass(cat) {
@@ -280,52 +331,133 @@
             return 'cat-general';
         }
 
+        function setText(id, text) {
+            document.getElementById(id).textContent = text;
+        }
+
         function renderStats() {
             var total = articles.length;
             var words = 0;
             var cats = {};
-            articles.forEach(function(a) {
-                words += parseInt(a.word_count || 0);
+            articles.forEach(function (a) {
+                words += a.word_count;
                 var c = a.category.split('【')[0];
                 cats[c] = true;
             });
 
-            document.getElementById('totalArticles').textContent = total;
-            document.getElementById('totalWords').textContent = words.toLocaleString();
-            document.getElementById('totalCategories').textContent = Object.keys(cats).length;
+            setText('totalArticles', String(total));
+            setText('totalWords', words.toLocaleString());
+            setText('totalCategories', String(Object.keys(cats).length));
         }
 
         function renderCategoryFilter() {
             var seen = {};
             var list = [];
-            articles.forEach(function(a) {
+            articles.forEach(function (a) {
                 if (!seen[a.category]) { seen[a.category] = true; list.push(a.category); }
             });
             var sel = document.getElementById('categoryFilter');
-            sel.innerHTML = '<option value="">全部分类</option>';
-            list.forEach(function(c) {
-                sel.innerHTML += '<option value="' + c + '">' + c + '</option>';
+            while (sel.firstChild) sel.removeChild(sel.firstChild);
+            var all = document.createElement('option');
+            all.value = '';
+            all.textContent = '全部分类';
+            sel.appendChild(all);
+            list.forEach(function (c) {
+                var opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                sel.appendChild(opt);
             });
+        }
+
+        function showTableMessage(message) {
+            var tbody = document.getElementById('tableBody');
+            while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+            var tr = document.createElement('tr');
+            var td = document.createElement('td');
+            td.colSpan = 8;
+            td.className = 'empty';
+            td.textContent = message;
+            tr.appendChild(td);
+            tbody.appendChild(tr);
         }
 
         function renderTable(data) {
             var tbody = document.getElementById('tableBody');
+            while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
             if (!data.length) {
-                tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无数据</td></tr>';
+                showTableMessage('暂无数据');
                 return;
             }
-            tbody.innerHTML = data.map(function(a) {
-                return '<tr>' +
-                    '<td class="col-id">' + a.id + '</td>' +
-                    '<td class="col-date">' + a.date + '</td>' +
-                    '<td class="col-title"><a href="' + a.url + '" target="_blank">' + a.title + '</a></td>' +
-                    '<td class="col-author">' + a.author + '</td>' +
-                    '<td class="col-source">' + a.source + '</td>' +
-                    '<td class="col-category"><span class="' + getCatClass(a.category) + '">' + a.category + '</span></td>' +
-                    '<td class="col-words">' + parseInt(a.word_count).toLocaleString() + '</td>' +
-                    '<td class="col-links"><a href="' + a.url + '" target="_blank">原文</a><a href="' + a.file + '" target="_blank">笔记</a></td>' +
-                '</tr>';
-            }).join('');
+            data.forEach(function (a) {
+                var tr = document.createElement('tr');
+
+                var tdId = document.createElement('td');
+                tdId.className = 'col-id';
+                tdId.textContent = String(a.id);
+
+                var tdDate = document.createElement('td');
+                tdDate.className = 'col-date';
+                tdDate.textContent = a.date;
+
+                var tdTitle = document.createElement('td');
+                tdTitle.className = 'col-title';
+                var titleLink = document.createElement('a');
+                titleLink.href = a.url;
+                titleLink.target = '_blank';
+                titleLink.rel = 'noopener';
+                titleLink.textContent = a.title;
+                tdTitle.appendChild(titleLink);
+
+                var tdAuthor = document.createElement('td');
+                tdAuthor.className = 'col-author';
+                tdAuthor.textContent = a.author;
+
+                var tdSource = document.createElement('td');
+                tdSource.className = 'col-source';
+                tdSource.textContent = a.source;
+
+                var tdCat = document.createElement('td');
+                tdCat.className = 'col-category';
+                var catSpan = document.createElement('span');
+                catSpan.className = getCatClass(a.category);
+                catSpan.textContent = a.category;
+                tdCat.appendChild(catSpan);
+
+                var tdWords = document.createElement('td');
+                tdWords.className = 'col-words';
+                tdWords.textContent = a.word_count.toLocaleString();
+
+                var tdLinks = document.createElement('td');
+                tdLinks.className = 'col-links';
+                var srcLink = document.createElement('a');
+                srcLink.href = a.url;
+                srcLink.target = '_blank';
+                srcLink.rel = 'noopener';
+                srcLink.textContent = '原文';
+                tdLinks.appendChild(srcLink);
+
+                tr.appendChild(tdId);
+                tr.appendChild(tdDate);
+                tr.appendChild(tdTitle);
+                tr.appendChild(tdAuthor);
+                tr.appendChild(tdSource);
+                tr.appendChild(tdCat);
+                tr.appendChild(tdWords);
+                tr.appendChild(tdLinks);
+                tbody.appendChild(tr);
+            });
+        }
+
+        function applySort() {
+            var f = currentSort.field;
+            var d = currentSort.direction === 'asc' ? 1 : -1;
+            articles.sort(function (a, b) {
+                var va = a[f], vb = b[f];
+                if (f === 'id' || f === 'word_count') { va = toInt(va); vb = toInt(vb); }
+                return va > vb ? d : (va < vb ? -d : 0);
+            });
+            renderTable(articles);
         }
 
         function sortTable(field) {
@@ -335,18 +467,13 @@
                 currentSort.field = field;
                 currentSort.direction = 'asc';
             }
-            articles.sort(function(a, b) {
-                var va = a[field], vb = b[field];
-                if (field === 'id' || field === 'word_count') { va = parseInt(va); vb = parseInt(vb); }
-                return currentSort.direction === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
-            });
-            renderTable(articles);
+            applySort();
         }
 
         function filterData() {
             var q = document.getElementById('searchInput').value.toLowerCase();
             var cat = document.getElementById('categoryFilter').value;
-            var filtered = articles.filter(function(a) {
+            var filtered = articles.filter(function (a) {
                 var matchQ = !q || a.title.toLowerCase().indexOf(q) >= 0 || a.author.toLowerCase().indexOf(q) >= 0 || a.source.toLowerCase().indexOf(q) >= 0;
                 var matchC = !cat || a.category === cat;
                 return matchQ && matchC;
@@ -355,33 +482,39 @@
         }
 
         function loadData() {
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', 'collect.csv', true);
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4) {
-                    if (xhr.status === 200 || xhr.status === 0) {
-                        var text = xhr.responseText;
-                        if (text.trim()) {
-                            articles = parseCSV(text);
-                            renderStats();
-                            renderCategoryFilter();
-                            renderTable(articles);
-                        }
-                        var now = new Date();
-                        document.getElementById('lastUpdate').textContent = '更新于 ' + now.toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' });
-                    } else {
-                        document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="empty">加载失败，请确保 collect.csv 存在</td></tr>';
-                    }
-                }
-            };
-            xhr.onerror = function() {
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="8" class="empty">请通过 HTTP 服务打开（如 VS Code Live Server）</td></tr>';
-            };
-            xhr.send();
+            var db = getDb();
+            if (!db) {
+                showTableMessage('请在 WorkBuddy 资料库中打开此页面以加载数据');
+                return;
+            }
+            showTableMessage('加载中...');
+            loadAll(db)
+                .then(function (rows) {
+                    articles = (rows || []).map(mapRow);
+                    renderStats();
+                    renderCategoryFilter();
+                    applySort();
+                    setText('lastUpdate', '更新于 ' + new Date().toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }));
+                })
+                .catch(function () {
+                    showTableMessage('数据加载失败，请稍后重试');
+                });
         }
 
         document.getElementById('searchInput').addEventListener('input', filterData);
         document.getElementById('categoryFilter').addEventListener('change', filterData);
+
+        // 订阅数据表变更：/clip 增量写入后自动刷新（300ms 去抖）
+        var __db = getDb();
+        if (__db && typeof __db.onUpdated === 'function') {
+            __db.onUpdated(function (payload) {
+                var ids = (payload && payload.databaseIds) || [];
+                if (ids.indexOf(DATABASE_ID) === -1) return;
+                if (refreshTimer) clearTimeout(refreshTimer);
+                refreshTimer = setTimeout(loadData, 300);
+            });
+        }
+
         loadData();
     </script>
 </body>

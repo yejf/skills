@@ -10,7 +10,7 @@ description: >-
 description_zh: 抓取网页内容，自动分类并提炼核心观点、金句，保存为结构化笔记
 description_en: Fetch web content, auto-classify and extract key insights, quotes, save as structured notes
 category: writing
-version: 2.3.0
+version: 2.4.0
 author: yejf
 ---
 
@@ -122,10 +122,10 @@ author: yejf
 | 文件 | 首次执行 | 后续执行 | 说明 |
 |------|----------|----------|------|
 | `clip/article/YYYY-MM-DD-xxx.md` | 新建 | 新建 | 提炼后的文章笔记 |
-| `clip/collect.csv` | 新建（带 BOM + 表头） | 追加一行 | 结构化数据记录 |
-| `clip/collect.html` | 新建 | 不动 | 可视化页面，自动从 CSV 加载 |
+| `clip/collect.csv` | 新建（带 BOM + 表头） | 追加一行 | 本地唯一事实源，结构化数据记录 |
+| `clip/library-sync.json` | 新建 | 不动 | 资料库同步状态 |
 
-**首次执行检查**：如果 `clip/` 目录或 `collect.csv`、`collect.html` 不存在，先创建再继续。
+**首次执行检查**：如果 `clip/` 目录或 `collect.csv` 不存在，先创建再继续。
 
 #### 5.1 保存笔记文件
 
@@ -152,20 +152,17 @@ id,date,title,author,source,category,word_count,url,file
 - 序号 = 当前最大序号 + 1
 - CSV 编码：UTF-8 with BOM（兼容 Excel 打开）
 - 无引号，逗号分隔
-- `collect.html` 会自动从 CSV 加载数据，**不需要手动更新 HTML**
+- 本轮新增的行在 5.3 中增量写入资料库表
 
-#### 5.3 创建 collect.html（仅首次）
+#### 5.3 同步到资料库（统一管理界面）
 
-首次执行时，创建 `clip/collect.html`。这是一个自包含的 HTML 页面，功能包括：
-- 从 `collect.csv` 加载数据（XMLHttpRequest，兼容本地文件）
-- 统计卡片（总文章数、总字数、分类数）
-- 搜索框（按标题、作者、来源过滤）
-- 分类筛选下拉菜单
-- 表头点击排序
-- 原文链接 + 笔记链接
-- 响应式布局
+`collect.csv` 是唯一事实源；统一管理界面由资料库承载，数据与视图分离（完整流程见 `@references/library-sync.md`）：
 
-完整代码参考：`@templates/collect.html.template`
+- **数据层**：`collect.csv` 导入资料库成为在线数据表（database），每次剪藏后把新增行**增量写入**该表
+- **展示层**：托管页从 `@templates/collect.html.template` 生成并上传为资料库在线页面，挂为数据表子节点，通过只读 SDK 实时读表渲染（统计、搜索、筛选、排序、原文直达）；HTML 本身不存数据，生成一次后**永不重写**
+- **首次执行**（`clip/library-sync.json` 不存在）：走完整引导——导入建表 → 生成托管页 → 写入状态文件
+- **后续执行**（状态文件已存在）：只做增量写入（本轮 5.2 新增的行）
+- **失败降级**：资料库同步失败不阻塞本地剪藏，回执中说明可重试；重试只补写未成功的行
 
 #### 5.4 更新知识库（可选）
 
@@ -175,28 +172,36 @@ id,date,title,author,source,category,word_count,url,file
 #### 5.5 向用户报告
 
 - 告知笔记保存位置
-- 告知 collect.csv 已更新（浏览器打开 collect.html 可查看汇总）
+- 告知 collect.csv 已更新（本地数据源）
+- 首次执行：告知资料库托管页链接（统一管理界面）；后续执行：说明已增量同步到资料库
 - 展示一句话总结和金句（1-2 句）
 - 询问是否需要进一步操作（如写公众号文章）
 
 ## 存储结构
 
 ```
+本地：
 clip/
-├── collect.csv         # 数据源（每次 /clip 追加一行）
-├── collect.html        # 展示层（浏览器打开，自动读取 CSV）
+├── collect.csv         # 数据源（每次 /clip 追加一行；本地唯一事实源）
+├── library-sync.json   # 资料库同步状态（首次同步后生成）
 ├── article/            # 文章笔记（每次 /clip 新建一个）
 │   ├── 2026-09-02-article-1.md
 │   ├── 2026-09-02-article-2.md
 │   └── ...
-└── (skill 文件在 .claude/skills/clip/)
+└── (skill 文件在技能目录)
+
+资料库（WorkBuddy）：
+├── collect（database）     # collect.csv 导入的在线数据表，每次剪藏增量写入
+│   └── collect.html（page）# 托管管理界面，只读 SDK 实时读表渲染
 ```
 
-**数据流**：`/clip` 执行 → 新建笔记 + 追加 CSV → 浏览器打开 HTML 自动展示
+**数据流**：`/clip` 执行 → 新建笔记 + 追加 CSV → 增量写入资料库表 → 托管页订阅变更自动刷新
 
 **文件职责**：
-- `collect.csv` — 唯一数据源，存储所有收录文章的元信息（序号、日期、标题、作者、来源、分类、字数、URL、文件路径）
-- `collect.html` — 纯展示层，通过 JavaScript 读取 CSV 渲染表格，支持搜索、筛选、排序，**不存储数据，无需更新**
+- `clip/collect.csv` — 本地唯一事实源，存储所有收录文章的元信息（序号、日期、标题、作者、来源、分类、字数、URL、文件路径），Excel 可直接打开
+- `clip/library-sync.json` — 资料库同步状态（spaceId、databaseId、托管页链接等），决定首次引导还是增量同步
+- 资料库 database — 在线数据层，由 skill 每次剪藏后增量写入
+- 资料库 page（collect.html）— 纯展示层，通过 SDK 从 database 实时读数渲染，支持搜索、筛选、排序，不存数据、无需更新
 - `article/*.md` — 文章笔记正文，由 skill 自动生成
 
 ## 错误处理
@@ -215,7 +220,8 @@ clip/
 用户：收藏这个链接 https://example.com/article
 AI：[执行抓取→分类→提炼→保存]
     笔记已保存到 clip/article/2026-09-02-article-title.md
-    汇总表格已更新（第 4 条）
+    本地 collect.csv 已更新（第 4 条），并已增量同步到资料库
+    管理界面：<资料库托管页链接>
     一句话总结：...
     金句：「...」
 ```
